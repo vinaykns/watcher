@@ -1,6 +1,7 @@
 import abc
 import six
 import socket
+import requests
 from watcher._i18n import _
 from watcher.decision_engine.strategy.strategies import base
 from watcher.common import exception as exc
@@ -8,6 +9,7 @@ from monascaclient import exc as exce
 from watcher.datasource import monasca as mon
 from watcher.decision_engine.model import element
 from watcher.common import nova_helper
+import pdb
 
 
 class CloudUtilization(base.CloudUtilizationBaseStrategy):
@@ -126,7 +128,7 @@ class CloudUtilization(base.CloudUtilizationBaseStrategy):
         #total_cores_used = nodes.vcpus * (host_avg_cpu_util / 100.0)
         return host_avg_cpu_util, host_avg_memory_util
 
-     
+
     def pre_execute(self):
         #self.solution.add_action(action_type="nop",
         #                         input_parameters = parameters)
@@ -147,6 +149,7 @@ class CloudUtilization(base.CloudUtilizationBaseStrategy):
         #pdb.set_trace()
         self.avg_cpu_utilization = sum(cpu_utilization_cluster) / len(cpu_utilization_cluster)
         self.avg_memory_utilization = sum(memory_utilization_cluster) / len(memory_utilization_cluster)
+        pdb.set_trace()
         print '************Collected cpu and memory statistics*********************'
         print self.avg_cpu_utilization, self.avg_memory_utilization
         
@@ -154,21 +157,24 @@ class CloudUtilization(base.CloudUtilizationBaseStrategy):
         if self.avg_cpu_utilization < self.threshold_level and self.avg_memory_utilization < self.threshold_level:
             print '*********Collected stats is less than threshold*****************'
             nova = nova_helper.NovaHelper()
-            s = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-            host = '128.31.28.53'
-            port = 9999
-            s.connect((host,port))
-            s.send('openstack_nodes')
-            nodes = s.recv(1024)
+            #s = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+            host = 'http://127.0.0.1:9000/'
+            #port = 9999
+            #url = '128.31.28.69:8080' 
+            #s.connect((host,port))
+            args = {'partition':'openstack'}
+            url = host + 'openstack_nodes'
+            nodes = requests.get(url,args).text
             nodes_status = []
 
             #Get the status of the openstack node node in nodes.decode('ascii'):
             if 'False' not in nodes:
-                for node in nodes.decode('ascii').split():
+                for node in nodes.split():
                 #node = nodes[0]
                 #pdb.set_trace()
-                    s.send(node)
-                    status = s.recv(1024)
+                    status_args = {'name':node}
+                    url = host + 'status'
+                    status = requests.get(url,status_args).text
                     #pdb.set_trace()
                     if status == 'SUSPEND':
                       try:
@@ -184,12 +190,18 @@ class CloudUtilization(base.CloudUtilizationBaseStrategy):
                         print "Unable to resume the instance in the openstack cluster"
                     
                       try:
-                        parameter = 'resume'+node
-                        s.send(parameter)
+                        #parameter = 'resume'+node
+                        resume_args = {'name':node}
+                        url = host + 'resume'
+                        if requests.get(url,resume_args).text == 'True': 
+                        #s.send(parameter)
                         #s.send(node)
-                        resp = s.recv(1024)
-                        s.send(node)
-                        res = s.recv(1024)
+                        #resp = s.recv(1024)
+                            status_args = {'name':node} 
+                            #s.send(node)
+                            #res = s.recv(1024)
+                            url = host + 'status'
+                            res = requests.get(url,status_args) 
 
                         if 'IDLE' in res:
                             nodes_status.append(res)
@@ -203,13 +215,20 @@ class CloudUtilization(base.CloudUtilizationBaseStrategy):
             #Look for the jobs
             node_status = []
             if 'SUSPENDED' not in nodes_status:
-                s.send('jobs')
-                job = s.recv(1024).decode('ascii')
-
+                #s.send('jobs')                
+                #job = s.recv(1024).decode('ascii')
+                url = host + 'jobs'
+                job = requests.get(url)
+ 
                 #Create an instance as a jo
                 if job == 'True':
+                    #try:
+                        #s.send('spawn_instance')
+
                     try:
-                        s.send('spawn_instance')
+                        url = host + 'spawn_instance'
+                        requests.get(url)
+                        print 'Able to create an instance'
                     except:
                         print 'Unable to create an instance'
            
@@ -219,20 +238,26 @@ class CloudUtilization(base.CloudUtilizationBaseStrategy):
             print '*********Collected stats is more than threshold*****************'
             nova = nova_helper.NovaHelper()
             #pdb.set_trace()
-            s = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-            host = '128.31.28.53'
-            port = 9999
-            s.connect((host,port))
-            s.send('openstack_nodes')
-            nodes = s.recv(1024)
+            #s = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+            host = 'http://127.0.0.1:9000/'
+            #port = 9999
+            #s.connect((host,port))
+            #s.send('openstack_nodes')
+            #nodes = s.recv(1024)
+            args = {'partition':'openstack'}
+            url = host + 'openstack_nodes'
+            nodes = requests.get(url,args).text
             nodes = nodes.split() 
             #s.close()
 
             for node in nodes:
                 #s.connect((host,port))
-                s.send(node)
-                status = s.recv(1024)
+                #s.send(node)
+                #status = s.recv(1024)
                 #s.close()
+                status_args = {'name':node}
+                url = host + 'status'
+                status = requests.get(url,status_args).text
                 if status.decode('ascii') == 'IDLE' or 'RUNNING':
                     try:
                         #pdb.set_trace()
@@ -244,11 +269,13 @@ class CloudUtilization(base.CloudUtilizationBaseStrategy):
                     #Suspend the node in the slurm cluster and then in openstack cluster as well
                     try:
                         #s.connect((host,port))
-                        parameter = 'suspend'+node
-                        s.send(parameter)
-                        s.send(node)
-                        resp = s.recv(1024)
-                        if resp:
+                        #parameter = 'suspend'+node
+                        suspend_args = {'name':node}
+                        #s.send(parameter)
+                        #requests.get('http://127.0.0.1:9000/suspend',suspend_args)
+                        #s.send(node)
+                        url = host + 'suspend'
+                        if requests.get(url,suspend_args) == 'True':
                             response = nova.suspend_instance(node_id)
                         #s.close()
                     except:
